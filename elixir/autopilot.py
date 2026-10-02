@@ -29,19 +29,21 @@ def plan_for(tier: str, status: str, message: str) -> dict:
         return {"tier": tier, "fix": "start cua-driver daemon",
                 "mode": "auto", "run": "daemon_cua"}
     if tier == "cloak" and status != "ok":
-        return {"tier": tier, "fix": "cloakbrowser update (free)",
-                "mode": "auto", "run": "update_cloak"}
+        # policy: installs/updates touch installed code -> always ask
+        return {"tier": tier, "fix": "cloakbrowser update (free, changes installed code)",
+                "mode": "ask", "kind": "install", "run": "update_cloak",
+                "ask_text": "Update cloakbrowser (free, modifies installed code)? [y/N]"}
     if tier == "agent-reach":
         return {"tier": tier, "fix": "login-walled platforms need your cookies",
                 "mode": "ask", "kind": "login",
                 "ask_text": "Paste Cookie-Editor export or confirm headed login? (small account)"}
     if tier == "judge" and status == "off":
         return {"tier": tier, "fix": "pip install cactus-needle",
-                "mode": "ask", "kind": "install",
+                "mode": "ask", "kind": "install", "run": "install_judge",
                 "ask_text": "Install cactus-needle (~100KB wheel)? [y/N]"}
     if tier == "apps" and status == "off":
         return {"tier": tier, "fix": "pip install cli-anything-hub",
-                "mode": "ask", "kind": "install",
+                "mode": "ask", "kind": "install", "run": "install_apps",
                 "ask_text": "Install cli-anything-hub? [y/N]"}
     if tier in ("wigolo", "obscura") and status == "off":
         return {"tier": tier, "fix": f"reinstall {tier}",
@@ -50,6 +52,10 @@ def plan_for(tier: str, status: str, message: str) -> dict:
     return {"tier": tier, "fix": f"manual: {message[:120]}",
             "mode": "ask", "kind": "irreversible",
             "ask_text": f"Tier {tier} needs attention: {message[:120]}. Proceed manually? [y/N]"}
+
+
+# install/update actions the user may approve. Key = plan["run"].
+_INSTALLS = {"install_judge": "cactus-needle", "install_apps": "cli-anything-hub"}
 
 
 def run_auto(key: str) -> dict:
@@ -74,14 +80,17 @@ def run_auto(key: str) -> dict:
             return {"ok": r.returncode == 0, "did": "cloak update attempted"}
         except (OSError, subprocess.TimeoutExpired) as e:
             return {"ok": False, "error": str(e)[:160]}
-    if key == "mount_e":
+    if key in _INSTALLS:
+        pkg = _INSTALLS[key]
         try:
             r = subprocess.run(
-                ["schtasks", "/Run", "/TN", "VyuhaMountVHD"],
-                capture_output=True, timeout=60,
+                ["python", "-m", "pip", "install", "--no-input", pkg],
+                capture_output=True, timeout=600,
                 encoding="utf-8", errors="replace",
             )
-            return {"ok": True, "did": "E: mount requested"}
+            ok = r.returncode == 0
+            return {"ok": ok, "did": f"pip install {pkg}",
+                    **({} if ok else {"error": (r.stderr or r.stdout)[-400:]})}
         except (OSError, subprocess.TimeoutExpired) as e:
             return {"ok": False, "error": str(e)[:160]}
     return {"ok": False, "error": f"unknown auto fix {key}"}
@@ -99,13 +108,17 @@ def autopilot(ask_fn=None) -> dict:
     log: list[dict] = []
     for plan in diagnose():
         if plan["mode"] == "auto":
-            result = run_auto(plan["run"])
-            log.append({**plan, **result})
+            log.append({**plan, **run_auto(plan["run"])})
+            continue
+        if not ask_fn(plan.get("ask_text", f"Approve {plan['fix']}?")):
+            log.append({**plan, "approved": False, "note": "skipped by you"})
+            continue
+        # an approval must actually do the thing, or it is theatre
+        if plan.get("run"):
+            log.append({**plan, "approved": True, **run_auto(plan["run"])})
         else:
-            if ask_fn(plan.get("ask_text", f"Approve {plan['fix']}?")):
-                log.append({**plan, "approved": True, "note": "run it now or say the word"})
-            else:
-                log.append({**plan, "approved": False, "note": "skipped by you"})
+            log.append({**plan, "approved": True,
+                        "note": f"approved — run manually: {plan['fix']}"})
     from .probes import doctor_all
 
     verify = {pr.name: pr.status for pr in doctor_all()}

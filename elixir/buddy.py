@@ -40,11 +40,27 @@ def _bynara_key() -> str | None:
         return None
 
 
+def _charge_guard() -> None:
+    """Refuse metered calls once the monthly cap is spent.
+
+    Enforced here rather than at call sites so no code path — CLI, Studio
+    synthesis, or buddy — can spend past the cap by forgetting a check.
+    """
+    from . import spend as _spend
+
+    if not _spend.allowed():
+        raise RuntimeError(
+            f"spend cap reached ({_spend.spent_this_month():.1f} IDR / "
+            f"{_spend.SPEND_CAP_IDR:.0f} IDR); raise ELIXIR_SPEND_CAP_IDR to continue"
+        )
+
+
 def _bynara_text(prompt: str, model: str = "agnes-2.5-flash") -> str:
-    """Metered text fallback. Spend-guarded by the caller."""
+    """Metered text fallback. Checked against the spend cap here."""
     key = _bynara_key()
     if not key:
         raise RuntimeError(_KEY_ERR)
+    _charge_guard()
     payload = {"model": model, "max_tokens": 300,
                "messages": [{"role": "user", "content": prompt}]}
     req = urllib.request.Request(
@@ -70,6 +86,7 @@ def _bynara_vision(question: str, img_b64: str) -> str:
     key = _bynara_key()
     if not key:
         raise RuntimeError(_KEY_ERR)
+    _charge_guard()
     payload = {
         "model": BYNARA_VISION_MODEL,
         "max_tokens": BYNARA_MAX_TOKENS,

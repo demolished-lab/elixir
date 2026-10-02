@@ -1,10 +1,18 @@
 # -*- coding: utf-8 -*-
 """Elixir tier probes — every check executes for real, never which() only."""
 from __future__ import annotations
-import json
+import importlib
 import shutil
 import subprocess
 from dataclasses import dataclass
+
+
+def _importable(module: str) -> bool:
+    try:
+        importlib.import_module(module)
+    except ImportError:
+        return False
+    return True
 
 
 @dataclass
@@ -15,15 +23,25 @@ class Probe:
     backend: str | None = None
 
 
-def _run(cmd: list[str], timeout: int = 15) -> tuple[bool, str]:
-    import os
+def _resolve(cmd: list[str]) -> list[str]:
+    """Resolve the executable to a real path so shell=True is never needed.
 
-    # npx/.cmd shims need shell on this box (win32 EINVAL otherwise)
-    use_shell = os.name == "nt" and cmd[0] in ("npx", "npm", "cmd")
+    Windows ships `npx.CMD`/`npm.CMD`, which CreateProcess will not launch
+    from a bare name — resolving the absolute path keeps us on shell=False
+    while still finding the shim. Remaining argv elements stay literal.
+    """
+    if not cmd:
+        return cmd
+    exe = shutil.which(cmd[0])
+    return [exe, *cmd[1:]] if exe else list(cmd)
+
+
+def _run(cmd: list[str], timeout: int = 15) -> tuple[bool, str]:
     try:
+        # shell=False: no cmd.exe re-parsing of any argument.
         r = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
-            encoding="utf-8", errors="replace", shell=use_shell,
+            _resolve(cmd), capture_output=True, text=True, timeout=timeout,
+            encoding="utf-8", errors="replace",
         )
         out = (r.stdout + r.stderr).strip()[:500]
         return r.returncode == 0, out
@@ -34,7 +52,10 @@ def _run(cmd: list[str], timeout: int = 15) -> tuple[bool, str]:
 
 
 def probe_wigolo() -> Probe:
-    ok, out = _run(["npx", "-y", "wigolo", "--version"], timeout=60)
+    from .config import PINS
+
+    # probe the pinned version the router will actually execute
+    ok, out = _run(["npx", "-y", f"wigolo@{PINS['wigolo']}", "--version"], timeout=60)
     if not ok:
         return Probe("wigolo", "off", f"wigolo missing: {out}", None)
     return Probe("wigolo", "ok", f"search/memory ready ({out})", "wigolo")
@@ -58,9 +79,7 @@ def probe_obscura() -> Probe:
 
 
 def probe_cloak() -> Probe:
-    try:
-        from cloakbrowser import launch  # noqa: F401
-    except ImportError:
+    if not _importable("cloakbrowser.launch"):
         return Probe("cloak", "off", "pip install cloakbrowser", None)
     ok, out = _run(["python", "-m", "cloakbrowser", "info"], timeout=60)
     if "152" in out or "146" in out:
@@ -116,8 +135,6 @@ def probe_apps() -> Probe:
 
 
 def probe_judge() -> Probe:
-    try:
-        import needle  # noqa: F401
-    except ImportError:
+    if not _importable("needle"):
         return Probe("judge", "off", "pip install cactus-needle", None)
     return Probe("judge", "ok", "Needle instant router (~140MB, calibrated confidence)", "needle")

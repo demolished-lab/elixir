@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import subprocess
 import time
-from pathlib import Path
 
 from .config import DATA_DIR
 
@@ -60,7 +59,6 @@ def start(label: str, video: bool = False) -> dict:
 
 
 def stop() -> dict:
-    global _LOCAL_STATE
     r = _call("stop_recording", {})
     if not r.get("ok") and _LOCAL_STATE.get("backend") == "local-metadata":
         _LOCAL_STATE["recording"] = False

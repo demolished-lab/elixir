@@ -1,8 +1,11 @@
 profiles/
 runs/
+artifacts/
 __pycache__/
 *.egg-info/
 .pytest_cache/
+build/
+dist/
 .env
 .elixir_state.json
 .elixir_spend.jsonl

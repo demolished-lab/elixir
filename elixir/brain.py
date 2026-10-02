@@ -53,7 +53,6 @@ def _site_of(url: str) -> str:
 
 
 def _execute(task: str, step: dict) -> dict:
-    t0 = time.time()
     verb, args = step["verb"], step.get("args", {})
     try:
         if verb == "web_search":

@@ -3,6 +3,7 @@
 
 Env vars (all optional, sane defaults):
   ELIXIR_DATA_DIR        profiles/state/screenshots root (default: package root)
+                         HTTP-served artifacts live in <DATA_DIR>/artifacts only
   ELIXIR_BYNARA_KEY_FILE path to file holding the cloud-eye API key (required
                          for cloud fallback; unset = cloud tiers disabled)
   ELIXIR_OLLAMA_URL      default http://localhost:11434
@@ -42,6 +43,14 @@ PROFILES_DIR = DATA_DIR / "profiles"
 STATE_FILE = DATA_DIR / ".elixir_state.json"
 SEAT_LOCK = DATA_DIR / ".cloak_seat.lock"
 SPEND_LOG = DATA_DIR / ".elixir_spend.jsonl"
+
+# The only directory the Studio HTTP server is allowed to read from.
+# Kept separate from DATA_DIR so `.env`, state files and profile cookies
+# can never be served by `/file` or `/shot`.
+ARTIFACTS_DIR = DATA_DIR / "artifacts"
+
+# Names never served over HTTP even if they sit inside ARTIFACTS_DIR.
+DENIED_SUFFIXES = (".env", ".lock", ".db", ".jsonl", ".key", ".pem")
 
 # No default on purpose: the key lives outside the repo, path comes from env.
 BYNARA_KEY_FILE = os.getenv("ELIXIR_BYNARA_KEY_FILE", "")

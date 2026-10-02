@@ -73,6 +73,9 @@ def main() -> None:
     p = sub.add_parser("autopilot", help="self-heal all tiers, ask approval for risky fixes")
     p.add_argument("--yes", action="store_true", help="auto-approve ask-tier (still never credentials)")
 
+    p = sub.add_parser("studio", help="local web Studio on 127.0.0.1 (token-gated)")
+    p.add_argument("--port", type=int, default=8765)
+
     a = ap.parse_args()
     if a.cmd == "doctor":
         for pr in doctor_all():
@@ -86,7 +89,14 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         print(router.fetch(a.url, a.dump)[:6000])
     elif a.cmd == "act":
-        fill = json.loads(a.fill) if a.fill else None
+        fill = None
+        if a.fill:
+            try:
+                fill = json.loads(a.fill)
+            except ValueError:
+                raise SystemExit('act --fill must be JSON, e.g. {"#id": "value"}')
+            if not isinstance(fill, dict):
+                raise SystemExit("act --fill must be a JSON object")
         print(json.dumps(router.act(a.url, a.screenshot, fill), ensure_ascii=False, indent=2))
     elif a.cmd == "harness-check":
         from .harness import SEAT_LOCK, seed_for, cloak_version
@@ -116,7 +126,10 @@ def main() -> None:
         elif a.action == "type":
             print(json.dumps(os_hands.type_text(a.text or ""), indent=2))
         elif a.action == "hotkey":
-            print(json.dumps(os_hands.hotkey(*a.keys.split(",")), indent=2))
+            keys = [k for k in (a.keys or "").split(",") if k]
+            if not keys:
+                raise SystemExit('os --hotkey --keys "ctrl,c" (comma-separated)')
+            print(json.dumps(os_hands.hotkey(*keys), indent=2))
     elif a.cmd == "social":
         from . import social
 
@@ -237,3 +250,16 @@ def main() -> None:
         else:
             res = ap.autopilot()
         print(json.dumps(res, ensure_ascii=False, indent=2))
+    elif a.cmd == "studio":
+        from . import ui
+
+        print(f"Elixir Studio: http://127.0.0.1:{a.port}/\n"
+              f"  bound to 127.0.0.1 only, every route needs the page token\n"
+              f"  token: {ui._TOKEN}\n"
+              f"  Ctrl+C to stop")
+        try:
+            ui.serve(a.port)
+        except OSError as e:
+            raise SystemExit(f"studio: cannot bind 127.0.0.1:{a.port}: {e}") from e
+        except KeyboardInterrupt:
+            print("\nstudio stopped")

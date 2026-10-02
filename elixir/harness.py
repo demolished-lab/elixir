@@ -12,7 +12,6 @@ import json
 import os
 import subprocess
 import time
-from pathlib import Path
 
 from .config import PROFILES_DIR, SEAT_LOCK as _SEAT, SEAT_TIMEOUT as _TIMEOUT, STATE_FILE
 

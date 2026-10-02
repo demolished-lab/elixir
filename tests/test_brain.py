@@ -2,7 +2,6 @@
 """Brain + memory gates: plan shape, learned arbitration, run logging."""
 
 from elixir import brain
-from elixir import memory as mem
 
 
 def test_decompose_url_task():
