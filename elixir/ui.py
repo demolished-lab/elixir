@@ -6,7 +6,6 @@
 from __future__ import annotations
 import html
 import json
-import mimetypes
 import os
 import secrets
 import threading
@@ -22,6 +21,28 @@ RUN_TTL = 15 * 60             # drop finished runs after 15 minutes
 MAX_RUNS = 50                 # hard ceiling on retained runs
 _ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 _ALLOWED_ORIGINS = {"127.0.0.1", "localhost"}
+
+# Content types for the artifacts Elixir actually writes (fetched pages,
+# screenshots, PDF captures). Declared here instead of guessed with
+# mimetypes: that table has no `.md` before 3.11, reads /etc/mime.types on
+# Unix and the registry on Windows, so the same file would otherwise leave
+# the server with a different Content-Type per OS and interpreter.
+_ARTIFACT_TYPES = {
+    ".md": "text/markdown; charset=utf-8",
+    ".markdown": "text/markdown; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+    ".log": "text/plain; charset=utf-8",
+    ".csv": "text/csv; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".htm": "text/html; charset=utf-8",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 
 _runs: dict = {}
 _lock = threading.Lock()
@@ -257,10 +278,8 @@ class Handler(BaseHTTPRequestHandler):
         # text/markdown), but always as an attachment: nothing from
         # artifacts/ is ever rendered in our origin, so an HTML or SVG
         # dropped in there cannot execute against the Studio token.
-        ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
-        if ctype.startswith("text/") or ctype in ("application/json",
-                                                  "application/javascript"):
-            ctype += "; charset=utf-8"
+        ctype = (_ARTIFACT_TYPES.get(os.path.splitext(full)[1].lower())
+                 or "application/octet-stream")
         safe_name = os.path.basename(full).replace('"', "").replace("\n", "")
         self.send_response(200)
         self.send_header("Content-Type", ctype)

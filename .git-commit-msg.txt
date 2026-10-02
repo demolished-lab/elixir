@@ -1,26 +1,23 @@
-security: refuse cross-site GETs, declare real artifact content types
+fix: declare artifact content types explicitly, not via mimetypes
 
-Two faults found by driving the live Studio rather than the fixtures.
+CI failed on windows-latest + Python 3.10 (the other four jobs passed).
+Cause: _serve_file guessed with mimetypes, whose strict table has no
+`.md` until 3.11. On Windows it reads no system mime database, so
+guess_type("note.md") returned None, my fallback emitted
+application/octet-stream, and the assertion `startswith("text/")`
+failed. Ubuntu 3.10 passed only because /etc/mime.types supplies the
+mapping -- same interpreter, different answer.
 
-1. do_GET only checked Host. Origin was enforced on POST alone, so a
-   foreign page's GET was served -- 200, just unreadable, because we
-   never send Access-Control-Allow-Origin. Not sending ACAO does stop the
-   response being parsed, but the request still executed and the
-   token-bearing bootstrap page was still fetched cross-site. Checking
-   Origin on reads as well closes that for good: `GET /` and every
-   tokened route now answer 403 to `Origin: https://evil.example`.
-   Native clients send no Origin, so curl, the CLI and the Studio page
-   itself are unaffected.
+That is the wrong property for a response header. Replaced the guess
+with an explicit _ARTIFACT_TYPES map covering what Elixir actually
+writes to artifacts/ (fetched pages are .md, screenshots .png, captures
+.pdf), defaulting to application/octet-stream. The Content-Disposition:
+attachment header is unchanged and still on every response, which is
+what stops an HTML or SVG in artifacts/ being rendered in our origin
+against the Studio token.
 
-2. _serve_file declared every artifact except a PDF as
-   `text/markdown`, so a screenshot went out as markdown. Guess the type
-   with mimetypes and fall back to application/octet-stream. The
-   `Content-Disposition: attachment` header stays on every response --
-   that is what keeps an HTML or SVG dropped into artifacts/ from being
-   rendered in our origin against the Studio token.
+The test now asserts the exact Content-Type rather than a prefix, so it
+checks determinism instead of whichever mapping the host happens to
+have, plus an unknown extension falling through to octet-stream.
 
-Regression tests: cross-site GET refused on both the bootstrap page and
-a tokened route; PNG sent as image/png, .md as text/*, .html never
-inline. 60 tests pass, pyflakes clean. Verified against a live server:
-GET / cross-site 403, /shot cross-site 403, /file f=act_check.png 200
-image/png attachment with intact PNG magic bytes.
+60 tests pass locally, pyflakes clean.

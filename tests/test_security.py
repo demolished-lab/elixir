@@ -261,6 +261,7 @@ def test_file_endpoint_declares_real_type_and_forces_download(
     monkeypatch.setattr(u, "ARTIFACTS_DIR", tmp_path)
     (tmp_path / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     (tmp_path / "note.md").write_text("# hi", encoding="utf-8")
+    (tmp_path / "blob.bin").write_bytes(b"\x00\x01")
     (tmp_path / "evil.html").write_text("<script>alert(1)</script>",
                                         encoding="utf-8")
 
@@ -270,8 +271,16 @@ def test_file_endpoint_declares_real_type_and_forces_download(
     assert "attachment" in h["Content-Disposition"]
 
     st, _, h = _get(f"http://127.0.0.1:{port}/file?f=note.md&t={u._TOKEN}")
-    assert st == 200 and h["Content-Type"].startswith("text/")
+    assert st == 200
+    # exact, not startswith("text/"): Python 3.10's mimetypes table has no
+    # .md and Windows reads no system mime database, so a guessed type
+    # varies by OS and interpreter. The map is ours, so it must not.
+    assert h["Content-Type"] == "text/markdown; charset=utf-8"
     assert "attachment" in h["Content-Disposition"]
+
+    st, _, h = _get(f"http://127.0.0.1:{port}/file?f=blob.bin&t={u._TOKEN}")
+    assert st == 200
+    assert h["Content-Type"] == "application/octet-stream"
 
     st, _, h = _get(f"http://127.0.0.1:{port}/file?f=evil.html&t={u._TOKEN}")
     assert st == 200
