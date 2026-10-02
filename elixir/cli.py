@@ -69,6 +69,7 @@ def main() -> None:
     sub.add_parser("health", help="machine-readable health for monitoring")
     sub.add_parser("versions", help="pinned vs installed upstream versions")
     sub.add_parser("spend", help="metered spend this month vs cap")
+    sub.add_parser("warm", help="preload local models so the first call is instant")
 
     p = sub.add_parser("autopilot", help="self-heal all tiers, ask approval for risky fixes")
     p.add_argument("--yes", action="store_true", help="auto-approve ask-tier (still never credentials)")
@@ -230,6 +231,10 @@ def main() -> None:
 
         print(json.dumps({"spent_idr": round(_spend.spent_this_month(), 2),
                           "cap_idr": SPEND_CAP_IDR}, indent=2))
+    elif a.cmd == "warm":
+        from . import buddy
+
+        print(json.dumps(buddy.warm(), ensure_ascii=False, indent=2))
     elif a.cmd == "autopilot":
         from . import autopilot as ap
 

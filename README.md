@@ -60,6 +60,44 @@ Profiles: `./profiles/<site>/` fixed `--fingerprint=seed` + storage_state, one h
 Artifacts (`.md` / `.pdf` / screenshots) land in `<ELIXIR_DATA_DIR>/artifacts/`
 — that is the only directory Studio will ever serve.
 
+## Speed
+
+```powershell
+python -m elixir warm        # load both local models once (~18s)
+```
+
+Local calls are quick while the models stay resident; bringing one *back* is
+not. Ollama evicts a model 5 minutes after its last call, and a reload costs
+minutes on a CPU-only box, so `warm` pays it once up front (the Studio warms
+on startup too), and every call asks for a longer lease via `keep_alive`
+(`ELIXIR_OLLAMA_KEEP_ALIVE`, default `15m`).
+
+Measured on a Ryzen 5 7520U (4C/8T, no GPU offload):
+
+| call | time |
+|---|---|
+| `spend`, warm text generation | 0.3–1 s |
+| `fetch`, `apps`, `decide` (warm) | 0.5–3 s |
+| `act` (launch + screenshot) | ~10 s |
+| `search` | 12–20 s |
+| `warm` (first load of both models) | ~18 s |
+| `doctor` / `health` | ~25 s |
+| `run` (plan → search → local LLM) | ~48 s |
+| **`buddy ask` (screen vision)** | **~150–175 s** |
+
+`doctor` probes all seven tiers concurrently, so it costs the slowest single
+probe (`agent-reach`, ~25 s) instead of the sum of all seven (~50 s).
+
+**Screen vision is the one slow path, and it is hardware.** Ollama runs the
+image encoder on CPU (`clip_ctx: CLIP using CPU backend`) and Qwen-VL needs
+1024 image tokens — llama-server is started with `--image-min-tokens 1024`,
+so shrinking the screenshot does not help (384 px still costs 1065 tokens).
+That is 1105 tokens prefilled at ~8 tok/s ≈ 140 s, measured with the model
+already resident and 5 GB RAM free, so it is not cold start and not paging.
+Every other call stays on the fast path. To make `buddy ask` fast, give the
+box a GPU, or set `ELIXIR_VISION_MODEL` to a vision model with a smaller
+image budget.
+
 ## Security model (Studio)
 
 | Control | Behaviour |

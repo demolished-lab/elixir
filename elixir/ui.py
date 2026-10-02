@@ -476,5 +476,23 @@ def _work(rid, task):
                 rr["done"] = True
 
 
+def _warm_async() -> None:
+    """Pre-load the local models in the background.
+
+    A cold Ollama reload costs minutes on this box, so the very first Studio
+    run should not be the one that pays for it — warming here moves that cost
+    to startup, where nobody is waiting on it.
+    """
+    try:
+        from .buddy import warm
+
+        r = warm()
+        got = ", ".join(f"{k} {v}" for k, v in r["models"].items())
+        print(f"studio: local models warm -> {got}", flush=True)
+    except Exception:  # noqa: BLE001 — warm-up must never block the server
+        pass
+
+
 def serve(port: int = PORT) -> None:
+    threading.Thread(target=_warm_async, daemon=True).start()
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

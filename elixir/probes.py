@@ -6,6 +6,7 @@ import importlib.metadata
 import os
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 
@@ -141,11 +142,21 @@ def probe_cua() -> Probe:
 
 
 def doctor_all() -> list[Probe]:
-    probes = [probe_wigolo(), probe_obscura(), probe_cloak(), probe_cua()]
-    probes.append(probe_agent_reach())
-    probes.append(probe_apps())
-    probes.append(probe_judge())
-    return probes
+    """Probe all seven tiers concurrently, returning them in a stable order.
+
+    Each probe talks to a different backend and blocks on a subprocess or a
+    live network call (npx startup alone is ~10s, a live fetch another ~15s).
+    Run in series the slowest probe sets the floor for everyone — `elixir
+    doctor` took ~53s. They are independent, so the wall clock becomes the
+    slowest single probe instead of their sum.
+    """
+    fns = [probe_wigolo, probe_obscura, probe_cloak, probe_cua,
+           probe_agent_reach, probe_apps, probe_judge]
+    with ThreadPoolExecutor(max_workers=len(fns)) as pool:
+        futures = [pool.submit(f) for f in fns]
+        # result() in submit order keeps output identical to the serial version
+        # (and still propagates a probe that raises, as before).
+        return [f.result() for f in futures]
 
 
 def probe_agent_reach() -> Probe:

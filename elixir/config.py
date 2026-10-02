@@ -10,7 +10,10 @@ Env vars (all optional, sane defaults):
   ELIXIR_TEXT_MODEL      default qwen3:4b-instruct-2507-q4_K_M
   ELIXIR_VISION_MODEL    default qwen2.5vl:3b
   ELIXIR_CLOUD_VISION    default agnes-2.5-flash
-  ELIXIR_MAX_TOKENS      default 150
+  ELIXIR_MAX_TOKENS      default 150 (applies to local *and* cloud generation)
+  ELIXIR_OLLAMA_KEEP_ALIVE  how long a local model stays resident after a call,
+                         default 15m. A cold reload costs minutes on a CPU-only
+                         box, so resident == fast.
   ELIXIR_SEAT_TIMEOUT    default 120
   ELIXIR_SPEND_CAP_IDR   monthly cloud-eye cap, default 50000 (~pennies)
   ELIXIR_LOG_LEVEL       default INFO
@@ -59,6 +62,7 @@ TEXT_MODEL = os.getenv("ELIXIR_TEXT_MODEL", "qwen3:4b-instruct-2507-q4_K_M")
 VISION_MODEL = os.getenv("ELIXIR_VISION_MODEL", "qwen2.5vl:3b")
 CLOUD_VISION_MODEL = os.getenv("ELIXIR_CLOUD_VISION", "agnes-2.5-flash")
 MAX_TOKENS = int(os.getenv("ELIXIR_MAX_TOKENS", "150"))
+OLLAMA_KEEP_ALIVE = os.getenv("ELIXIR_OLLAMA_KEEP_ALIVE", "15m")
 SEAT_TIMEOUT = int(os.getenv("ELIXIR_SEAT_TIMEOUT", "120"))
 SPEND_CAP_IDR = float(os.getenv("ELIXIR_SPEND_CAP_IDR", "50000"))
 LOG_LEVEL = os.getenv("ELIXIR_LOG_LEVEL", "INFO")

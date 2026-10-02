@@ -121,3 +121,96 @@ def test_off_probe_separates_uninstalled_from_not_on_path():
 
     scheme = "nt_user" if os.name == "nt" else "posix_user"
     assert sysconfig.get_path("scripts", scheme) in p.message
+
+
+def test_local_ollama_call_is_bounded_and_stays_warm(monkeypatch):
+    """The local path sent neither `num_predict` nor `keep_alive`.
+
+    So it ignored ELIXIR_MAX_TOKENS entirely (generating until EOS on a CPU
+    that manages ~4 tok/s), and let Ollama evict the model after its default 5
+    minutes -- the next call then paid a reload that measures in minutes here.
+    """
+    import json as _json
+
+    import elixir.config as cfg
+    from elixir import buddy
+
+    seen: dict = {}
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"response": "ready"}'
+
+    def fake(req, timeout=0):
+        seen.update(_json.loads(req.data))
+        return _Resp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake)
+    assert buddy._ollama_generate("some-model", "hi", ["aW1n"]) == "ready"
+    assert seen["options"]["num_predict"] == cfg.MAX_TOKENS
+    assert seen["keep_alive"] == cfg.OLLAMA_KEEP_ALIVE
+    assert seen["images"] == ["aW1n"]
+
+
+def test_warm_preloads_every_local_model(monkeypatch):
+    from elixir import buddy
+    import elixir.config as cfg
+
+    loaded: list = []
+    monkeypatch.setattr(
+        buddy, "_ollama_generate",
+        lambda model, prompt, images=None: loaded.append(model) or "ready")
+
+    r = buddy.warm()
+    assert r["ok"] is True
+    assert set(r["models"]) == {cfg.TEXT_MODEL, cfg.VISION_MODEL}
+    assert set(loaded) == {cfg.TEXT_MODEL, cfg.VISION_MODEL}
+
+
+def test_warm_reports_an_absent_model_instead_of_raising(monkeypatch):
+    """Warm-up runs on a background thread at Studio startup; a missing or
+    unreachable model must show up as a status line, never as a crash."""
+    from elixir import buddy
+
+    def down(model, prompt, images=None):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(buddy, "_ollama_generate", down)
+    r = buddy.warm()
+    assert r["ok"] is False
+    assert all(v.startswith("unavailable") for v in r["models"].values())
+
+
+def test_doctor_all_probes_concurrently_and_keeps_order(monkeypatch):
+    """All seven probes block on a subprocess or a live network call.
+
+    In series `elixir doctor` cost the sum of the seven (~53s); the barrier
+    below only opens when all seven are in flight at once, so a serial
+    doctor_all fails this test rather than merely running slower.
+    """
+    import threading
+
+    from elixir import probes
+
+    names = ["wigolo", "obscura", "cloak", "cua", "agent-reach", "apps", "judge"]
+    gate = threading.Barrier(len(names), timeout=30)
+
+    def make(name):
+        def probe():
+            gate.wait()
+            return probes.Probe(name, "ok", f"{name} ok", None)
+
+        return probe
+
+    for n in names:
+        monkeypatch.setattr(probes, "probe_" + n.replace("-", "_"), make(n))
+
+    out = probes.doctor_all()
+    assert [p.name for p in out] == names       # stable, serial-looking order
+    assert all(p.status == "ok" for p in out)

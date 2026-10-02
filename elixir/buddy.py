@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import subprocess
+import time
 import urllib.request
 
 from . import config as _cfg
@@ -158,7 +159,19 @@ def say(text: str, rate: int = 0) -> dict:
 
 
 def _ollama_generate(model: str, prompt: str, images: list[str] | None = None) -> str:
-    payload: dict = {"model": model, "prompt": prompt, "stream": False}
+    payload: dict = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        # Ollama defaults to evicting a model 5 minutes after its last call, and
+        # reloading it here costs minutes (weights and the vision encoder are
+        # re-paged in). Asking for a longer lease is what keeps the next call
+        # on the fast path; `warm()` pays the load once, up front.
+        "keep_alive": _cfg.OLLAMA_KEEP_ALIVE,
+        # num_predict was never sent, so the local path ignored ELIXIR_MAX_TOKENS
+        # completely and generated until EOS — on a ~4 tok/s CPU that is unbounded.
+        "options": {"num_predict": _cfg.MAX_TOKENS},
+    }
     if images:
         payload["images"] = images
     req = urllib.request.Request(
@@ -168,6 +181,24 @@ def _ollama_generate(model: str, prompt: str, images: list[str] | None = None) -
     )
     with urllib.request.urlopen(req, timeout=300) as resp:
         return json.loads(resp.read()).get("response", "").strip()
+
+
+def warm() -> dict:
+    """Load the local models now so the *first* real request is not a cold one.
+
+    Measured on this box: a resident model answers in seconds, a reloaded one
+    takes minutes. Called by `elixir warm` and by the Studio at startup, so a
+    fresh shell or a fresh page starts warm instead of cold.
+    """
+    out: dict[str, str] = {}
+    for model in (TEXT_MODEL, _cfg.VISION_MODEL):
+        t0 = time.perf_counter()
+        try:
+            _ollama_generate(model, "Reply with the single word: ready")
+            out[model] = f"warm in {time.perf_counter() - t0:.1f}s"
+        except Exception as e:  # noqa: BLE001 — absent model must not raise
+            out[model] = f"unavailable: {str(e)[:120]}"
+    return {"ok": all(v.startswith("warm") for v in out.values()), "models": out}
 
 
 def ask(question: str, shot: str = "buddy.png") -> dict:
