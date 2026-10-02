@@ -34,6 +34,31 @@ def _bynara_key() -> str | None:
         return None
 
 
+def _bynara_text(prompt: str, model: str = "agnes-2.5-flash") -> str:
+    """Metered text fallback. Spend-guarded by the caller."""
+    key = _bynara_key()
+    if not key:
+        raise RuntimeError("bynara key file unreadable")
+    payload = {"model": model, "max_tokens": 300,
+               "messages": [{"role": "user", "content": prompt}]}
+    req = urllib.request.Request(
+        f"{BYNARA_URL}/v1/messages",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "x-api-key": key,
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        body = json.loads(resp.read())
+    text = "".join(b.get("text", "") for b in body.get("content", [])).strip()
+    try:
+        from . import spend as _spend
+
+        u = body.get("usage", {})
+        _spend.record(model, u.get("input_tokens", 0), u.get("output_tokens", 0), 0.1, 0.2)
+    except Exception:  # noqa: BLE001
+        pass
+    return text
+
+
 def _bynara_vision(question: str, img_b64: str) -> str:
     """Cloud eyes via bynara router (metered PAYG, pennies per ask)."""
     key = _bynara_key()

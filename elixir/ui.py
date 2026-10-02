@@ -42,6 +42,7 @@ h1.logo{font-size:44px;margin:6px 0 2px;letter-spacing:-1px}
 .sug{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
 .sug div{background:#fff;border:1px solid #e7e7e1;border-radius:12px;padding:12px;font-size:13px;cursor:pointer}
 #shots img{max-width:220px;border-radius:10px;margin:6px;border:1px solid #ddd}
+.ans{background:#eef4ff;border:1px solid #c9d8f5;border-radius:12px;padding:12px 14px;margin-top:10px;color:#1c1c1c;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;white-space:pre-wrap}
 </style></head><body>
 <div id=rail><div class=dot on>&#10022;</div><div class=dot>&#9998;</div><div class=dot>&#9783;</div><div class=dot>&#9776;</div></div>
 <div id=main>
@@ -65,11 +66,11 @@ function fill(t){document.getElementById('task').value=t;}
 async function tiers(){const r=await fetch('/api/doctor');const j=await r.json();
 document.getElementById('tiers').innerHTML=j.map(t=>`<span class="pill ${t.status=='ok'?'ok':'bad'}">${t.name}: ${t.status}</span>`).join('');}
 async function run(){const task=document.getElementById('task').value.trim();if(!task)return;
-const f=document.getElementById('feed');f.textContent='planning…\\n';
+const f=document.getElementById('feed');f.innerHTML='planning…<br>';
 const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task})});
 const {id}=await r.json();
 const t=setInterval(async()=>{const s=await(await fetch('/api/runs/'+id)).json();
-f.textContent=s.log;if(s.done){clearInterval(t);shots(s.shots||[]);tiers();}},900);}
+f.innerHTML=s.log.replace(/\\n/g,'<br>');if(s.done){clearInterval(t);shots(s.shots||[]);tiers();}},900);}
 function shots(s){document.getElementById('shots').innerHTML=s.map(p=>`<img src="/shot?f=${encodeURIComponent(p)}">`).join('');}
 tiers();
 </script></body></html>"""
@@ -164,6 +165,39 @@ def _say(run, text):
         run["log"] += text + "\n"
 
 
+def _synthesize(task: str, trail: list) -> str:
+    """Compose a conversational final answer from step evidence, like I do."""
+    from html import escape as _esc
+
+    bits = []
+    for t in trail:
+        o = t["outcome"]
+        verb = t["step"].get("verb", "?")
+        res = o.get("result")
+        if isinstance(res, dict):
+            res = json.dumps(res)[:800]
+        bits.append(f"[{verb} ok={o.get('ok')}]: {str(res)[:600]}")
+    evidence = "\n".join(bits)[:3000]
+    prompt = (f"You are Elixir, a helpful operator. The user asked: {task}\n"
+              f"Here is what your tools found:\n{evidence}\n\n"
+              f"Answer directly and conversationally in 3-6 sentences. "
+              f"Name the key result first. No bullet logs, no step dump.")
+    try:
+        from .buddy import _ollama_generate
+        from .config import TEXT_MODEL
+
+        return _ollama_generate(TEXT_MODEL, prompt)
+    except Exception:  # noqa: BLE001 — cloud fallback, then honest extract
+        try:
+            from .buddy import _bynara_text
+
+            return _bynara_text(prompt)
+        except Exception:
+            pass
+    first = (trail[0]["outcome"].get("result") if trail else "")
+    return f"Here's what I found: {str(first)[:400]}"
+
+
 def _work(rid, task):
     from . import brain, buddy, router
     from . import memory as mem
@@ -175,13 +209,38 @@ def _work(rid, task):
     try:
         run = get()
         _say(run, f"task: {task}")
+        trail = []
         for i, step in enumerate(brain.decompose(task)):
             _say(run, f"[{i}] {step['verb']} {str(step.get('args'))[:100]}")
+            outcome = {"ok": False, "result": ""}
             if step["verb"] == "web_search":
-                r = router.search(step["args"].get("query", task), 3)
-                titles = [x.get("title", "?") for x in (r.get("results") or [])[:3]]
-                _say(run, f"  -> {len(titles)} results: " + " | ".join(titles)[:200])
-                mem.log_run(task, f"{i}:web_search", "wigolo", bool(titles), 0, 0.8)
+                from html import escape as _esc
+
+                r = router.search(step["args"].get("query", task), 5)
+                results = r.get("results") or []
+                lines = []
+                for x in results[:5]:
+                    t, u = _esc(x.get("title", "?")), x.get("url", "")
+                    sn = _esc(str(x.get("snippet") or x.get("excerpt") or "")[:220])
+                    link = f"<a href='{u}' style='color:#8ab4ff'>{t}</a>" if u else t
+                    lines.append(f"&#8226; {link}<br><span style='color:#999'>{sn}</span>")
+                _say(run, f"  -> {len(results)} results:<br>" + "<br>".join(lines)
+                     if lines else "  -> no results")
+                outcome = {"ok": bool(results),
+                           "result": "; ".join(
+                               f"{x.get('title', '?')} ({x.get('url', '')}) — "
+                               f"{str(x.get('snippet') or x.get('excerpt') or '')[:200]}"
+                               for x in results[:5])}
+                mem.log_run(task, f"{i}:web_search", "wigolo", bool(results), 0, 0.8)
+                if results and any(w in task.lower() for w in ("github", "repo", "paper", "docs")):
+                    top = results[0].get("url", "")
+                    _say(run, f"  following top result: {_esc(top)}")
+                    try:
+                        body = router.fetch(top)
+                        _say(run, f"  -> {_esc(body[:600])}")
+                        outcome["result"] += f" | TOP PAGE: {body[:800]}"
+                    except Exception as e:  # noqa: BLE001
+                        _say(run, f"  -> follow-up failed: {_esc(str(e))[:120]}")
             elif step["verb"] == "web_fetch":
                 url = step["args"].get("url", "")
                 saved = router.fetch_and_save(url, out_dir=".")
@@ -190,6 +249,9 @@ def _work(rid, task):
                           f"style='color:#8ab4ff'>download .md</a>")
                 mem.log_run(task, f"{i}:web_fetch", "fetch",
                             saved["chars"] > 200, 0, 0.7)
+                with open(saved["path"], encoding="utf-8") as _f:
+                    outcome = {"ok": saved["chars"] > 200,
+                               "result": _f.read()[len(url) + 5:1200]}
             elif step["verb"] == "stealth_act":
                 url = step["args"].get("url", "")
                 r = router.act(url, screenshot=f"ui_{rid}_3.png")
@@ -197,6 +259,8 @@ def _work(rid, task):
                 _say(run, f"  -> {r.get('title')} (3-frame flipbook + "
                           f"<a href='/file?f=ui_{rid}.pdf' style='color:#8ab4ff'>PDF</a>)")
                 mem.log_run(task, f"{i}:stealth_act", "cloak", bool(r.get("title")), 0, 0.8)
+                outcome = {"ok": bool(r.get("title")),
+                           "result": f"page titled '{r.get('title')}' at {r.get('url')}"}
                 with _lock:
                     for fp in r.get("frames", []) or [f"ui_{rid}_3.png"]:
                         import os as _os
@@ -205,10 +269,18 @@ def _work(rid, task):
                 r = buddy.ask(step["args"].get("question", task), shot=f"buddy_{rid}.png")
                 _say(run, f"  -> [{r.get('via')}] " + str(r.get("answer"))[:300])
                 mem.log_run(task, f"{i}:buddy", str(r.get("via")), bool(r.get("ok")), 0, 0.7)
+                outcome = {"ok": bool(r.get("ok")), "result": str(r.get("answer"))[:500]}
                 with _lock:
                     run["shots"].append(f"buddy_{rid}.png")
             else:
                 _say(run, f"  -> manual: elixir {step['verb']} (see CLI)")
+                outcome = {"ok": False, "result": "deferred to CLI"}
+            trail.append({"step": step, "outcome": outcome})
+        _say(run, "composing answer…")
+        from html import escape as _esc
+
+        final = _synthesize(task, trail)
+        _say(run, f"<div class='ans'><b>elixir &gt;</b> {_esc(final)}</div>")
         with _lock:
             run["done"] = True
             run["log"] += "done.\n"
