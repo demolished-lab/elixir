@@ -2,6 +2,8 @@
 """Elixir tier probes — every check executes for real, never which() only."""
 from __future__ import annotations
 import importlib
+import importlib.metadata
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -27,6 +29,32 @@ def _exports(module: str, attr: str) -> bool:
     except ImportError:
         return False
     return hasattr(mod, attr)
+
+
+def _missing(tier: str, pkg: str, exe: str, hint: str) -> Probe:
+    """Report a tier as `off`, separating "not installed" from "installed
+    but its launcher never reached PATH".
+
+    pip falls back to the user Scripts directory when it cannot write to
+    site-packages, and that directory is not on PATH by default. Answering
+    "pip install pkg" there sends people to reinstall something they
+    already have — which is exactly how `cua` and `apps` both read `off`
+    on a box where both were installed.
+    """
+    try:
+        importlib.metadata.version(pkg)
+    except importlib.metadata.PackageNotFoundError:
+        return Probe(tier, "off", hint, None)
+    import sysconfig
+
+    # site.USER_BASE is version-less on Windows, so joining it with
+    # "Scripts" points at a directory that does not exist. The per-scheme
+    # answer (nt_user/posix_user) is where pip actually lands.
+    scheme = "nt_user" if os.name == "nt" else "posix_user"
+    scripts = sysconfig.get_path("scripts", scheme) or ""
+    return Probe(tier, "off",
+                 f"{pkg} installed, but `{exe}` is not on PATH: add "
+                 f"{scripts} and open a new shell", None)
 
 
 @dataclass
@@ -108,7 +136,8 @@ def probe_cua() -> Probe:
         return Probe("cua", "ok", f"OS hands live ({out.strip()[:80]})", "cua-driver")
     if shutil.which("cua-driver"):
         return Probe("cua", "warn", f"driver installed, daemon check: {out[:160]}", None)
-    return Probe("cua", "off", "optional: pip install cua-driver for desktop-app hands", None)
+    return _missing("cua", "cua-driver", "cua-driver",
+                    "optional: pip install cua-driver for desktop-app hands")
 
 
 def doctor_all() -> list[Probe]:
@@ -136,10 +165,9 @@ def probe_agent_reach() -> Probe:
 
 
 def probe_apps() -> Probe:
-    import shutil
-
     if not shutil.which("cli-hub"):
-        return Probe("apps", "off", "pip install cli-anything-hub", None)
+        return _missing("apps", "cli-anything-hub", "cli-hub",
+                        "pip install cli-anything-hub")
     from .apps import _run
 
     ok, out = _run(["search", "obsidian"])

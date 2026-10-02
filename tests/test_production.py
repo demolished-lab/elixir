@@ -95,3 +95,29 @@ def test_probe_check_handles_reexported_callables():
     assert probes._importable("re.match") is False       # ...not a module
     assert probes._exports("re", "no_such_attr") is False
     assert probes._importable("elixir_no_such_module") is False
+
+
+def test_off_probe_separates_uninstalled_from_not_on_path():
+    """`cua` and `apps` both read `off  pip install ...` on a box where both
+    were installed: pip had put the launchers in the user Scripts directory,
+    which is not on PATH. Telling people to reinstall fixes nothing."""
+    from elixir import probes
+
+    p = probes._missing("tier", "elixir-no-such-dist", "nope",
+                        "pip install nope")
+    assert p.status == "off"
+    assert p.message == "pip install nope"          # genuinely absent
+
+    p = probes._missing("tier", "pytest", "pytest", "pip install pytest")
+    assert p.status == "off"
+    assert "not on PATH" in p.message               # installed, misplaced
+    assert "pip install pytest" not in p.message    # never: it is present
+    # the directory must be where pip really lands, not site.USER_BASE with
+    # "Scripts" bolted on -- that is a version-less path on Windows and
+    # does not exist (it reads .../Roaming/Python/Scripts, the real one is
+    # .../Roaming/Python/Python313/Scripts).
+    import os
+    import sysconfig
+
+    scheme = "nt_user" if os.name == "nt" else "posix_user"
+    assert sysconfig.get_path("scripts", scheme) in p.message

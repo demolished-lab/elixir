@@ -1,23 +1,18 @@
-fix: declare artifact content types explicitly, not via mimetypes
+fix: say "not on PATH" when an installed tier cannot be found
 
-CI failed on windows-latest + Python 3.10 (the other four jobs passed).
-Cause: _serve_file guessed with mimetypes, whose strict table has no
-`.md` until 3.11. On Windows it reads no system mime database, so
-guess_type("note.md") returned None, my fallback emitted
-application/octet-stream, and the assertion `startswith("text/")`
-failed. Ubuntu 3.10 passed only because /etc/mime.types supplies the
-mapping -- same interpreter, different answer.
+`elixir doctor` reported `cua` and `apps` as `off  pip install ...` on a
+machine where both were installed. pip falls back to the user Scripts
+directory when it cannot write site-packages, and that directory is not
+on PATH by default, so shutil.which() missed launchers sitting right
+there -- and the hint told people to reinstall software they already had.
 
-That is the wrong property for a response header. Replaced the guess
-with an explicit _ARTIFACT_TYPES map covering what Elixir actually
-writes to artifacts/ (fetched pages are .md, screenshots .png, captures
-.pdf), defaulting to application/octet-stream. The Content-Disposition:
-attachment header is unchanged and still on every response, which is
-what stops an HTML or SVG in artifacts/ being rendered in our origin
-against the Studio token.
+_probe_missing checks importlib.metadata first: absent keeps the install
+hint, present names the directory to add. That directory comes from
+sysconfig's nt_user/posix_user scheme. site.USER_BASE looked like the
+answer but is version-less on Windows, so joining it with "Scripts"
+yields ...\Roaming\Python\Scripts when the real one is
+...\Roaming\Python\Python313\Scripts -- I shipped that wrong path once
+and the live probe caught it. The test now asserts the suggested path
+comes from sysconfig, so the substitution cannot come back.
 
-The test now asserts the exact Content-Type rather than a prefix, so it
-checks determinism instead of whichever mapping the host happens to
-have, plus an unknown extension falling through to octet-stream.
-
-60 tests pass locally, pyflakes clean.
+61 tests pass, pyflakes clean. CI 5/5 on 37d965f.
