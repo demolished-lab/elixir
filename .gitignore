@@ -14,3 +14,5 @@ dist/
 *.mp4
 *.gif
 demo_e2e.py
+# scratch commit messages written next to the repo before `git commit -F`
+.git-commit-msg.txt
