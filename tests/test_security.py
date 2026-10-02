@@ -231,6 +231,53 @@ def test_post_cross_origin_is_rejected(studio):
     assert code == 403
 
 
+def test_get_cross_origin_is_rejected(studio):
+    """Reads are refused too, not merely left unreadable.
+
+    Omitting `Access-Control-Allow-Origin` stops a foreign page parsing the
+    body, but the request would still be served. Refusing it means the
+    token-bearing bootstrap page is never fetched cross-site in the first
+    place. Native clients send no Origin and are unaffected.
+    """
+    port, u = studio
+    code, _, _ = _raw(port, "GET", "/shot?f=nope.png",
+                      {"X-Elixir-Token": u._TOKEN})
+    assert code == 404  # no Origin -> reaches the route
+    code, _, _ = _raw(port, "GET", "/shot?f=nope.png",
+                      {"X-Elixir-Token": u._TOKEN,
+                       "Origin": "https://evil.example"})
+    assert code == 403  # cross-site Origin -> refused first
+    code, _, _ = _raw(port, "GET", "/",
+                      {"Origin": "https://evil.example"})
+    assert code == 403  # the token bootstrap page especially
+
+
+def test_file_endpoint_declares_real_type_and_forces_download(
+        studio, tmp_path, monkeypatch):
+    """A screenshot must not be sent as text/markdown, and nothing in
+    artifacts/ may ever be rendered in our origin — an HTML or SVG dropped
+    in there would execute against the Studio token."""
+    port, u = studio
+    monkeypatch.setattr(u, "ARTIFACTS_DIR", tmp_path)
+    (tmp_path / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (tmp_path / "note.md").write_text("# hi", encoding="utf-8")
+    (tmp_path / "evil.html").write_text("<script>alert(1)</script>",
+                                        encoding="utf-8")
+
+    st, body, h = _get(f"http://127.0.0.1:{port}/file?f=shot.png&t={u._TOKEN}")
+    assert st == 200 and body.startswith(b"\x89PNG")
+    assert h["Content-Type"].startswith("image/png")
+    assert "attachment" in h["Content-Disposition"]
+
+    st, _, h = _get(f"http://127.0.0.1:{port}/file?f=note.md&t={u._TOKEN}")
+    assert st == 200 and h["Content-Type"].startswith("text/")
+    assert "attachment" in h["Content-Disposition"]
+
+    st, _, h = _get(f"http://127.0.0.1:{port}/file?f=evil.html&t={u._TOKEN}")
+    assert st == 200
+    assert "attachment" in h["Content-Disposition"]  # never inline, ever
+
+
 def test_post_rebound_host_is_rejected(studio):
     port, u = studio
     code, _, _ = _raw(port, "POST", "/api/run",

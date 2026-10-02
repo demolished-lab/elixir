@@ -6,6 +6,7 @@
 from __future__ import annotations
 import html
 import json
+import mimetypes
 import os
 import secrets
 import threading
@@ -211,9 +212,14 @@ class Handler(BaseHTTPRequestHandler):
         # and could read the token straight off the bootstrap page.
         if not self._host_ok():
             return self._deny(403, "bad host")
+        # Origin on reads as well as writes. Not sending ACAO already stops a
+        # foreign page from reading the body, but refusing outright means the
+        # token-bearing bootstrap page is never fetched across sites at all.
+        if not self._origin_ok():
+            return self._deny(403, "cross-origin")
         if route == "/":
             # the only unauthenticated route: it hands out the token and
-            # nothing else. Cross-origin callers cannot read it back.
+            # nothing else, and only to loopback same-site callers.
             return self._send(PAGE.replace("{{TOKEN}}", _TOKEN),
                               "text/html; charset=utf-8")
         if not self._token_ok():
@@ -247,8 +253,14 @@ class Handler(BaseHTTPRequestHandler):
                 raw = f.read()
         except OSError:
             return self._deny(404, "nope")
-        ctype = ("application/pdf" if full.lower().endswith(".pdf")
-                 else "text/markdown; charset=utf-8")
+        # Declare the file's real type (a screenshot must not arrive as
+        # text/markdown), but always as an attachment: nothing from
+        # artifacts/ is ever rendered in our origin, so an HTML or SVG
+        # dropped in there cannot execute against the Studio token.
+        ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
+        if ctype.startswith("text/") or ctype in ("application/json",
+                                                  "application/javascript"):
+            ctype += "; charset=utf-8"
         safe_name = os.path.basename(full).replace('"', "").replace("\n", "")
         self.send_response(200)
         self.send_header("Content-Type", ctype)
