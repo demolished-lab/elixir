@@ -22,11 +22,17 @@ BYNARA_URL = "https://router.bynara.id"
 BYNARA_KEY_FILE = _cfg.BYNARA_KEY_FILE
 BYNARA_VISION_MODEL = _cfg.CLOUD_VISION_MODEL
 BYNARA_MAX_TOKENS = _cfg.MAX_TOKENS
+_KEY_ERR = (
+    "cloud eyes unavailable: set ELIXIR_BYNARA_KEY_FILE to a file containing "
+    "the API key (never commit it), or stay on local Ollama tiers"
+)
 
 
 def _bynara_key() -> str | None:
     import re
 
+    if not BYNARA_KEY_FILE:
+        return None
     try:
         with open(BYNARA_KEY_FILE, encoding="utf-8") as f:
             return re.search(r'"([^"]+)"', f.read()).group(1)
@@ -38,7 +44,7 @@ def _bynara_text(prompt: str, model: str = "agnes-2.5-flash") -> str:
     """Metered text fallback. Spend-guarded by the caller."""
     key = _bynara_key()
     if not key:
-        raise RuntimeError("bynara key file unreadable")
+        raise RuntimeError(_KEY_ERR)
     payload = {"model": model, "max_tokens": 300,
                "messages": [{"role": "user", "content": prompt}]}
     req = urllib.request.Request(
@@ -63,7 +69,7 @@ def _bynara_vision(question: str, img_b64: str) -> str:
     """Cloud eyes via bynara router (metered PAYG, pennies per ask)."""
     key = _bynara_key()
     if not key:
-        raise RuntimeError("bynara key file unreadable")
+        raise RuntimeError(_KEY_ERR)
     payload = {
         "model": BYNARA_VISION_MODEL,
         "max_tokens": BYNARA_MAX_TOKENS,

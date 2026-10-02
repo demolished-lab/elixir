@@ -5,7 +5,8 @@ Demo video kept local-only by choice (`take_full.mp4`, not shipped).
 
 ## Install
 ```powershell
-cd C:\path\to\elixir
+git clone https://github.com/demolished-lab/elixir.git
+cd elixir
 pip install -e .                    # elixir cli
 npx -y wigolo --version              # search/memory (already 0.2.1 on this box)
 ~/.obscura/obscura.exe --version     # fast render (already 0.2.2)

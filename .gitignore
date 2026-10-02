@@ -8,4 +8,6 @@ __pycache__/
 .elixir_spend.jsonl
 .elixir_memory.db
 *.png
+*.mp4
+*.gif
 demo_e2e.py

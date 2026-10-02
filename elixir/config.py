@@ -3,7 +3,8 @@
 
 Env vars (all optional, sane defaults):
   ELIXIR_DATA_DIR        profiles/state/screenshots root (default: package root)
-  ELIXIR_BYNARA_KEY_FILE path to key file (default: previous hardcoded path)
+  ELIXIR_BYNARA_KEY_FILE path to file holding the cloud-eye API key (required
+                         for cloud fallback; unset = cloud tiers disabled)
   ELIXIR_OLLAMA_URL      default http://localhost:11434
   ELIXIR_TEXT_MODEL      default qwen3:4b-instruct-2507-q4_K_M
   ELIXIR_VISION_MODEL    default qwen2.5vl:3b
@@ -42,10 +43,8 @@ STATE_FILE = DATA_DIR / ".elixir_state.json"
 SEAT_LOCK = DATA_DIR / ".cloak_seat.lock"
 SPEND_LOG = DATA_DIR / ".elixir_spend.jsonl"
 
-BYNARA_KEY_FILE = os.getenv(
-    "ELIXIR_BYNARA_KEY_FILE",
-    r"C:\path\to\bynara_key.txt",
-)
+# No default on purpose: the key lives outside the repo, path comes from env.
+BYNARA_KEY_FILE = os.getenv("ELIXIR_BYNARA_KEY_FILE", "")
 OLLAMA_URL = os.getenv("ELIXIR_OLLAMA_URL", "http://localhost:11434")
 TEXT_MODEL = os.getenv("ELIXIR_TEXT_MODEL", "qwen3:4b-instruct-2507-q4_K_M")
 VISION_MODEL = os.getenv("ELIXIR_VISION_MODEL", "qwen2.5vl:3b")
