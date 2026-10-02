@@ -1,6 +1,10 @@
 # Elixir — human-equal web entity
 Standalone router: `wigolo -> obscura -> cloak -> cua-driver`, read + act.
 
+![demo](docs/demo.gif)
+
+Full narrated run (3 min, real HN + Notepad + edge cases): [docs/demo.mp4](docs/demo.mp4).
+
 ## Install
 ```powershell
 cd C:\path\to\elixir
