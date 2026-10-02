@@ -121,6 +121,30 @@ class Handler(BaseHTTPRequestHandler):
             if img:
                 return self._send(img, "image/png")
             return self._send("nope", "text/plain", 404)
+        if self.path.startswith("/file?"):
+            import os
+
+            from .config import DATA_DIR
+
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            rel = q.get("f", [""])[0]
+            full = os.path.abspath(os.path.join(str(DATA_DIR), rel))
+            if not full.startswith(str(DATA_DIR)):
+                return self._send("nope", "text/plain", 404)
+            try:
+                with open(full, "rb") as f:
+                    raw = f.read()
+            except OSError:
+                return self._send("nope", "text/plain", 404)
+            ctype = "application/pdf" if full.endswith(".pdf") else "text/markdown"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Content-Disposition",
+                             f"attachment; filename={os.path.basename(full)}")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         return self._send("{}", "application/json", 404)
 
     def do_POST(self):
@@ -160,16 +184,23 @@ def _work(rid, task):
                 mem.log_run(task, f"{i}:web_search", "wigolo", bool(titles), 0, 0.8)
             elif step["verb"] == "web_fetch":
                 url = step["args"].get("url", "")
-                body = router.fetch(url)
-                _say(run, f"  -> {len(body)} chars")
-                mem.log_run(task, f"{i}:web_fetch", "fetch", len(body) > 200, 0, 0.7)
+                saved = router.fetch_and_save(url, out_dir=".")
+                _say(run, f"  -> {saved['chars']} chars "
+                          f"<a href='/file?f={saved['path'].split(chr(92))[-1]}' "
+                          f"style='color:#8ab4ff'>download .md</a>")
+                mem.log_run(task, f"{i}:web_fetch", "fetch",
+                            saved["chars"] > 200, 0, 0.7)
             elif step["verb"] == "stealth_act":
                 url = step["args"].get("url", "")
-                r = router.act(url, screenshot=f"ui_{rid}.png")
-                _say(run, f"  -> {r.get('title')} (shot saved)")
+                r = router.act(url, screenshot=f"ui_{rid}_3.png")
+                pdf = router.act_pdf(url, f"ui_{rid}.pdf")
+                _say(run, f"  -> {r.get('title')} (3-frame flipbook + "
+                          f"<a href='/file?f=ui_{rid}.pdf' style='color:#8ab4ff'>PDF</a>)")
                 mem.log_run(task, f"{i}:stealth_act", "cloak", bool(r.get("title")), 0, 0.8)
                 with _lock:
-                    run["shots"].append(f"ui_{rid}.png")
+                    for fp in r.get("frames", []) or [f"ui_{rid}_3.png"]:
+                        import os as _os
+                        run["shots"].append(_os.path.basename(fp))
             elif step["verb"] == "buddy_ask":
                 r = buddy.ask(step["args"].get("question", task), shot=f"buddy_{rid}.png")
                 _say(run, f"  -> [{r.get('via')}] " + str(r.get("answer"))[:300])
