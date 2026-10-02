@@ -82,3 +82,16 @@ def test_config_defaults():
     assert cfg.MAX_TOKENS > 0
     assert "agent-reach" in cfg.PINS
     assert cfg.SEAT_TIMEOUT > 0
+
+
+def test_probe_check_handles_reexported_callables():
+    """cloakbrowser.launch is a *function* re-exported by the package, not a
+    submodule. Checking it as a module raised ImportError and made a fully
+    installed cloak report `off  pip install cloakbrowser` in `elixir doctor`.
+    """
+    from elixir import probes
+
+    assert probes._exports("re", "match") is True        # re-exported callable
+    assert probes._importable("re.match") is False       # ...not a module
+    assert probes._exports("re", "no_such_attr") is False
+    assert probes._importable("elixir_no_such_module") is False

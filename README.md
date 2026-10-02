@@ -7,14 +7,44 @@ Demo video kept local-only by choice (`take_full.mp4`, not shipped).
 ```powershell
 git clone https://github.com/demolished-lab/elixir.git
 cd elixir
-pip install -e .                    # elixir cli
-npx -y wigolo --version              # search/memory (already 0.2.1 on this box)
-~/.obscura/obscura.exe --version     # fast render (already 0.2.2)
-pip install cloakbrowser             # stealth (already 0.5.11 + 152-pro)
-# optional OS hands (installed 0.32.0, daemon on named pipe):
-cua-driver serve --socket "\\.\pipe\cua-driver"  # one daemon per boot, then:
-python -m elixir doctor              # all four tiers ok
+pip install -e ".[dev]"              # elixir cli + pytest/pyflakes
+
+# tier 1 — search/memory (npm, free)
+npx -y wigolo@0.2.1 --version
+
+# tier 2 — obscura fast render. NOT on PyPI: the package called `obscura`
+# there is an unrelated Argon2 file-encryptor. Get the Rust binary:
+#   https://github.com/h4ckf0r0day/obscura/releases -> obscura-x86_64-windows.zip
+# extract obscura.exe + obscura-worker.exe into ~/.obscura/  (0.2.2 = pinned)
+~/.obscura/obscura.exe --version
+
+# tier 3 — stealth browser (free, 1 session)
+pip install cloakbrowser==0.5.11
+python -m cloakbrowser install       # downloads the 535 MB Chromium once
+
+# tier 4 — OS hands + desktop apps
+pip install cua-driver==0.32.0
+cua-driver serve --socket "\\.\pipe\cua-driver"   # one daemon per boot
+
+# tiers 5-7 — social, app harnesses, intent router
+pip install https://github.com/Panniantong/agent-reach/archive/main.zip
+pip install cli-anything-hub==0.4.1
+pip install cactus-needle==3.0.6
+
+# local brains for the voice buddy (no cloud, no spend)
+ollama pull qwen3:4b-instruct-2507-q4_K_M   # text
+ollama pull qwen2.5vl:3b                    # vision
+
+python -m elixir doctor              # every tier must read `ok`
+python -m elixir health              # {"healthy": true}
 ```
+
+If `doctor` reports `cua`/`apps` off with the tools installed, your user
+Scripts dir isn't on PATH — pip put the launchers in
+`%APPDATA%\Python\Python313\Scripts`, add it to PATH and open a new shell.
+
+`elixir versions` checks all seven against their pins; if it reports drift
+you upgraded something on purpose, so bump `PINS` in `elixir/config.py`.
 
 ## Use
 ```powershell
@@ -48,7 +78,7 @@ Artifacts (`.md` / `.pdf` / screenshots) land in `<ELIXIR_DATA_DIR>/artifacts/`
 
 ## Ops (production)
 ```powershell
-elixir doctor        # human report, 8 tiers
+elixir doctor        # human report, 7 tiers — all must read `ok`
 elixir health        # machine JSON: {"healthy": bool, "tiers": {...}} — point monitoring here
 elixir versions      # pinned vs installed upstream drift
 elixir spend         # metered cloud-eyes vs monthly cap (default 50000 IDR)

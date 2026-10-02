@@ -15,6 +15,20 @@ def _importable(module: str) -> bool:
     return True
 
 
+def _exports(module: str, attr: str) -> bool:
+    """True when `from module import attr` would succeed.
+
+    Needed because packages re-export callables (cloakbrowser.launch is a
+    *function* on the package, not a submodule). Checking it as a module
+    raised ImportError and made a fully-installed cloak report "off".
+    """
+    try:
+        mod = importlib.import_module(module)
+    except ImportError:
+        return False
+    return hasattr(mod, attr)
+
+
 @dataclass
 class Probe:
     name: str
@@ -79,7 +93,7 @@ def probe_obscura() -> Probe:
 
 
 def probe_cloak() -> Probe:
-    if not _importable("cloakbrowser.launch"):
+    if not _exports("cloakbrowser", "launch"):
         return Probe("cloak", "off", "pip install cloakbrowser", None)
     ok, out = _run(["python", "-m", "cloakbrowser", "info"], timeout=60)
     if "152" in out or "146" in out:
