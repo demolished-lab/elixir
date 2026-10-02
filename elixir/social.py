@@ -10,11 +10,17 @@ from __future__ import annotations
 
 
 def status() -> dict:
-    from agent_reach.config import Config
-    from agent_reach.doctor import check_all
-
     try:
+        from agent_reach.config import Config
+        from agent_reach.doctor import check_all
         results = check_all(Config())
+    except ImportError:
+        platforms = ("youtube", "bilibili", "v2ex", "rss", "twitter", "reddit",
+                     "xiaohongshu")
+        return {"ok": True, "score": "0/7", "channels": {
+            p: {"status": "off", "message": "agent-reach not installed",
+                "backend": None} for p in platforms
+        }}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e)[:300]}
     out = {}

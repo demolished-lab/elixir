@@ -184,8 +184,6 @@ def main() -> None:
     elif a.cmd == "health":
         import time
 
-        from .probes import doctor_all
-
         probes = doctor_all()
         print(json.dumps({
             "ts": time.time(),

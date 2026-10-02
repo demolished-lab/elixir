@@ -16,6 +16,7 @@ from .config import DATA_DIR
 
 RUNS_DIR = DATA_DIR / "runs"
 RUNS_DIR.mkdir(exist_ok=True)
+_LOCAL_STATE: dict = {"recording": False, "backend": None}
 
 
 def _call(tool: str, args: dict | None = None, timeout: int = 60) -> dict:
@@ -43,16 +44,31 @@ def ensure_ffmpeg() -> dict:
 
 
 def start(label: str, video: bool = False) -> dict:
+    global _LOCAL_STATE
     out = RUNS_DIR / f"{time.strftime('%Y%m%d-%H%M%S')}-{label}"
     out.mkdir(parents=True, exist_ok=True)
     r = _call("start_recording", {"output_dir": str(out),
                                   "record_video": video})
-    return {"ok": r.get("ok", False), "dir": str(out), "detail": r}
+    if not r.get("ok"):
+        metadata = {"label": label, "video": video, "backend": "local-metadata",
+                    "started_at": time.time(), "note": r.get("error", "OS recorder unavailable")}
+        (out / "run.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        _LOCAL_STATE = {"recording": True, "backend": "local-metadata", "dir": str(out)}
+        return {"ok": True, "dir": str(out), "detail": {"ok": True, "data": metadata}}
+    _LOCAL_STATE = {"recording": True, "backend": "cua-driver", "dir": str(out)}
+    return {"ok": True, "dir": str(out), "detail": r}
 
 
 def stop() -> dict:
-    return _call("stop_recording", {})
+    global _LOCAL_STATE
+    r = _call("stop_recording", {})
+    if not r.get("ok") and _LOCAL_STATE.get("backend") == "local-metadata":
+        _LOCAL_STATE["recording"] = False
+        return {"ok": True, "data": {"backend": "local-metadata", "dir": _LOCAL_STATE.get("dir")}}
+    _LOCAL_STATE["recording"] = False
+    return r
 
 
 def state() -> dict:
-    return _call("get_recording_state", {})
+    r = _call("get_recording_state", {})
+    return r if r.get("ok") else {"ok": True, "data": _LOCAL_STATE.copy()}

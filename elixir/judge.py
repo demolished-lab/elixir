@@ -16,7 +16,23 @@ def decide(request: str) -> dict:
     import os
 
     os.environ.setdefault(NEEDLE_TELEMETRY_ENV, "0")
-    import needle
+    try:
+        import needle
+    except ImportError:
+        low = request.lower()
+        import re
+
+        urls = re.findall(r"https?://[^\s\"']+", request)
+        if any(v in low for v in ("search", "find", "look up")):
+            calls = [{"name": "web_search", "args": {"query": request}}]
+        elif urls and any(v in low for v in ("click", "fill", "login", "act", "screenshot")):
+            calls = [{"name": "stealth_act", "args": {"url": urls[0]}}]
+        elif urls:
+            calls = [{"name": "web_fetch", "args": {"url": urls[0]}}]
+        else:
+            calls = []
+        return {"ok": True, "calls": calls, "confidence": 0.7 if calls else 0.0,
+                "reasoning": "deterministic fallback; cactus-needle not installed"}
 
     @needle.tool
     def web_search(query: str):

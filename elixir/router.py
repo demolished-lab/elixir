@@ -48,8 +48,20 @@ def fetch(url: str, dump: str = "markdown") -> str:
         return _cloak_fetch(url)
 
 
+def _plain_fetch(url: str) -> str:
+    """Last-resort read-only fetch for boxes without optional browser tiers."""
+    from urllib.request import Request, urlopen
+
+    req = Request(url, headers={"User-Agent": "elixir/0.1 (+read-only fallback)"})
+    with urlopen(req, timeout=20) as response:
+        return response.read(2_000_000).decode("utf-8", errors="replace")
+
+
 def _cloak_fetch(url: str) -> str:
-    from cloakbrowser import launch_persistent_context
+    try:
+        from cloakbrowser import launch_persistent_context
+    except ImportError:
+        return _plain_fetch(url)
 
     from .harness import PROFILES, acquire_seat, release_seat, seed_for
 
@@ -73,7 +85,11 @@ def _cloak_fetch(url: str) -> str:
 
 def act(url: str, screenshot: str | None = None, fill: dict | None = None) -> dict:
     """Human act: goto + optional fill + click + screenshot via cloak humanize."""
-    from cloakbrowser import launch_persistent_context
+    try:
+        from cloakbrowser import launch_persistent_context
+    except ImportError:
+        return {"ok": False, "url": url,
+                "error": "cloakbrowser unavailable; install it for humanized act/fill/screenshot"}
     from urllib.parse import urlparse
 
     from .harness import PROFILES, acquire_seat, release_seat, rotate_seed, seed_for
