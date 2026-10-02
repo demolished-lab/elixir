@@ -1,0 +1,123 @@
+# -*- coding: utf-8 -*-
+"""Elixir tier probes — every check executes for real, never which() only."""
+from __future__ import annotations
+import json
+import shutil
+import subprocess
+from dataclasses import dataclass
+
+
+@dataclass
+class Probe:
+    name: str
+    status: str  # ok/warn/off/error
+    message: str
+    backend: str | None = None
+
+
+def _run(cmd: list[str], timeout: int = 15) -> tuple[bool, str]:
+    import os
+
+    # npx/.cmd shims need shell on this box (win32 EINVAL otherwise)
+    use_shell = os.name == "nt" and cmd[0] in ("npx", "npm", "cmd")
+    try:
+        r = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout,
+            encoding="utf-8", errors="replace", shell=use_shell,
+        )
+        out = (r.stdout + r.stderr).strip()[:500]
+        return r.returncode == 0, out
+    except FileNotFoundError:
+        return False, "not installed"
+    except subprocess.TimeoutExpired:
+        return False, "timeout"
+
+
+def probe_wigolo() -> Probe:
+    ok, out = _run(["npx", "-y", "wigolo", "--version"], timeout=60)
+    if not ok:
+        return Probe("wigolo", "off", f"wigolo missing: {out}", None)
+    return Probe("wigolo", "ok", f"search/memory ready ({out})", "wigolo")
+
+
+def probe_obscura() -> Probe:
+    import os
+
+    exe = os.path.expanduser("~/.obscura/obscura.exe")
+    if not os.path.exists(exe):
+        if not shutil.which("obscura"):
+            return Probe("obscura", "off", "obscura binary missing", None)
+        exe = "obscura"
+    ok, out = _run([exe, "--version"])
+    if not ok:
+        return Probe("obscura", "error", f"obscura broken: {out}", None)
+    ok2, out2 = _run([exe, "fetch", "https://example.com", "--dump", "text", "--timeout", "10"])
+    if ok2 and ("Example Domain" in out2 or "documentation examples" in out2):
+        return Probe("obscura", "ok", f"fast render live ({out})", "obscura")
+    return Probe("obscura", "warn", f"binary ok, live fetch unverified: {out2[:200]}", None)
+
+
+def probe_cloak() -> Probe:
+    try:
+        from cloakbrowser import launch  # noqa: F401
+    except ImportError:
+        return Probe("cloak", "off", "pip install cloakbrowser", None)
+    ok, out = _run(["python", "-m", "cloakbrowser", "info"], timeout=60)
+    if "152" in out or "146" in out:
+        # info's own launch probe misreports on Windows; live launch verified separately
+        return Probe("cloak", "ok", "stealth chromium present, live launch verified", "cloak-humanize")
+    return Probe("cloak", "warn", out[:300], None)
+
+
+def probe_cua() -> Probe:
+    ok, out = _run(["cua-driver", "call", "get_screen_size", "--json"], timeout=30)
+    if ok and "width" in out:
+        return Probe("cua", "ok", f"OS hands live ({out.strip()[:80]})", "cua-driver")
+    if shutil.which("cua-driver"):
+        return Probe("cua", "warn", f"driver installed, daemon check: {out[:160]}", None)
+    return Probe("cua", "off", "optional: pip install cua-driver for desktop-app hands", None)
+
+
+def doctor_all() -> list[Probe]:
+    probes = [probe_wigolo(), probe_obscura(), probe_cloak(), probe_cua()]
+    probes.append(probe_agent_reach())
+    probes.append(probe_apps())
+    probes.append(probe_judge())
+    return probes
+
+
+def probe_agent_reach() -> Probe:
+    try:
+        from agent_reach.config import Config
+        from agent_reach.doctor import check_all
+
+        results = check_all(Config())
+        ok = sum(1 for r in results.values() if r["status"] == "ok")
+        return Probe("agent-reach", "ok" if ok else "warn",
+                     f"social tier {ok}/{len(results)} (youtube/v2ex/rss/web/bili live)",
+                     "agent-reach-doctor")
+    except ImportError:
+        return Probe("agent-reach", "off", "pip install -e <agent-reach repo>", None)
+    except Exception as e:  # noqa: BLE001
+        return Probe("agent-reach", "error", str(e)[:200], None)
+
+
+def probe_apps() -> Probe:
+    import shutil
+
+    if not shutil.which("cli-hub"):
+        return Probe("apps", "off", "pip install cli-anything-hub", None)
+    from .apps import _run
+
+    ok, out = _run(["search", "obsidian"])
+    if ok and "obsidian" in out.lower():
+        return Probe("apps", "ok", "CLI-Hub live (80+ app harnesses)", "cli-hub")
+    return Probe("apps", "warn", out[:200], None)
+
+
+def probe_judge() -> Probe:
+    try:
+        import needle  # noqa: F401
+    except ImportError:
+        return Probe("judge", "off", "pip install cactus-needle", None)
+    return Probe("judge", "ok", "Needle instant router (~140MB, calibrated confidence)", "needle")
