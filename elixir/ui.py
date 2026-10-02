@@ -94,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def _send(self, body, ctype="application/json", code=200):
+    def _send(self, body, ctype="application/json; charset=utf-8", code=200):
         raw = body if isinstance(body, bytes) else body.encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
