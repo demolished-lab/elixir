@@ -8,7 +8,8 @@ Env vars (all optional, sane defaults):
                          for cloud fallback; unset = cloud tiers disabled)
   ELIXIR_OLLAMA_URL      default http://localhost:11434
   ELIXIR_TEXT_MODEL      default qwen3:4b-instruct-2507-q4_K_M
-  ELIXIR_VISION_MODEL    default qwen2.5vl:3b
+  ELIXIR_VISION_MODEL    default gemma3:4b (measured fastest accurate option on
+                         this box: 144s vs qwen2.5vl:3b 213s per screenshot)
   ELIXIR_CLOUD_VISION    default agnes-2.5-flash
   ELIXIR_MAX_TOKENS      default 150 (applies to local *and* cloud generation)
   ELIXIR_OLLAMA_KEEP_ALIVE  how long a local model stays resident after a call,
@@ -59,7 +60,7 @@ DENIED_SUFFIXES = (".env", ".lock", ".db", ".jsonl", ".key", ".pem")
 BYNARA_KEY_FILE = os.getenv("ELIXIR_BYNARA_KEY_FILE", "")
 OLLAMA_URL = os.getenv("ELIXIR_OLLAMA_URL", "http://localhost:11434")
 TEXT_MODEL = os.getenv("ELIXIR_TEXT_MODEL", "qwen3:4b-instruct-2507-q4_K_M")
-VISION_MODEL = os.getenv("ELIXIR_VISION_MODEL", "qwen2.5vl:3b")
+VISION_MODEL = os.getenv("ELIXIR_VISION_MODEL", "gemma3:4b")
 CLOUD_VISION_MODEL = os.getenv("ELIXIR_CLOUD_VISION", "agnes-2.5-flash")
 MAX_TOKENS = int(os.getenv("ELIXIR_MAX_TOKENS", "150"))
 OLLAMA_KEEP_ALIVE = os.getenv("ELIXIR_OLLAMA_KEEP_ALIVE", "15m")

@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Elixir buddy (Clicky pattern, Windows-native, $0): see screen, answer aloud.
 
-Loop: screenshot (cua-driver) + question -> local Ollama vision (minicpm5)
--> text answer -> Windows SAPI speech. No cloud, no meter.
+Loop: screenshot (cua-driver) + question -> local Ollama vision (gemma3 by
+default, ELIXIR_VISION_MODEL) -> text answer -> Windows SAPI speech. No cloud,
+no meter.
 Voice-in (mic STT) is future work (no mic deps on this box); input is typed.
 Pointing: answer may name window titles; physical cursor-pointing stays a
 manual `elixir os click` until a pure-move tool exists in cua-driver.

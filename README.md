@@ -33,7 +33,7 @@ pip install cactus-needle==3.0.6
 
 # local brains for the voice buddy (no cloud, no spend)
 ollama pull qwen3:4b-instruct-2507-q4_K_M   # text
-ollama pull qwen2.5vl:3b                    # vision
+ollama pull gemma3:4b                       # vision
 
 python -m elixir doctor              # every tier must read `ok`
 python -m elixir health              # {"healthy": true}
@@ -89,14 +89,23 @@ Measured on a Ryzen 5 7520U (4C/8T, no GPU offload):
 probe (`agent-reach`, ~25 s) instead of the sum of all seven (~50 s).
 
 **Screen vision is the one slow path, and it is hardware.** Ollama runs the
-image encoder on CPU (`clip_ctx: CLIP using CPU backend`) and Qwen-VL needs
-1024 image tokens — llama-server is started with `--image-min-tokens 1024`,
-so shrinking the screenshot does not help (384 px still costs 1065 tokens).
-That is 1105 tokens prefilled at ~8 tok/s ≈ 140 s, measured with the model
-already resident and 5 GB RAM free, so it is not cold start and not paging.
-Every other call stays on the fast path. To make `buddy ask` fast, give the
-box a GPU, or set `ELIXIR_VISION_MODEL` to a vision model with a smaller
-image budget.
+image encoder on CPU (`clip_ctx: CLIP using CPU backend` — `ollama ps` reads
+`100% CPU`, the Radeon iGPU is never used), and each screenshot pays a fixed
+encoder pass at a fixed input resolution, so downscaling does not help.
+
+Measured with the model resident and 6 GB RAM free, one fresh screenshot each:
+
+| `ELIXIR_VISION_MODEL` | wall | image prefill | answer |
+|---|---|---|---|
+| `gemma3:4b` (**default**) | **144 s** | 302 tok @ 2.9 tok/s | accurate |
+| `qwen2.5vl:3b` | 213 s | 1117 tok @ 6.2 tok/s | most precise |
+| `moondream` | 46 s | 759 tok @ 19.5 tok/s | flaky — empty or hallucinated on 3 of 5 runs |
+
+`gemma3:4b` is the default because it is both faster than qwen and reliably
+correct; moondream is 3x quicker but could not be trusted to describe a
+screen. Every other call stays on the fast path. The remaining lever is a
+GPU: Ollama will not pass `--mmproj-offload`, so the encoder cannot leave the
+CPU without running llama-server ourselves.
 
 ## Security model (Studio)
 
