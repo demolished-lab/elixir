@@ -103,9 +103,17 @@ Measured with the model resident and 6 GB RAM free, one fresh screenshot each:
 
 `gemma3:4b` is the default because it is both faster than qwen and reliably
 correct; moondream is 3x quicker but could not be trusted to describe a
-screen. Every other call stays on the fast path. The remaining lever is a
-GPU: Ollama will not pass `--mmproj-offload`, so the encoder cannot leave the
-CPU without running llama-server ourselves.
+screen. Every other call stays on the fast path.
+
+The obvious lever is the built-in GPU, and Ollama does find one: with
+`OLLAMA_IGPU_ENABLE=1` it stops dropping the integrated device, reports
+`Vulkan0 / AMD Radeon(TM) Graphics`, and moves 2.9 GB of weights onto it.
+It is **slower** — 137 s versus 122 s for the same call — because that iGPU
+is 2 CUs against 8 CPU threads. Measured, not assumed; leave the variable
+unset.
+
+Prefer precision over speed? `ELIXIR_VISION_MODEL=qwen2.5vl:3b` — it is still
+pulled, and costs roughly 50 s more per screenshot.
 
 ## Security model (Studio)
 
